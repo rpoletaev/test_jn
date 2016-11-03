@@ -1,22 +1,21 @@
-package test_juno
+package test_jn
 
 import (
-	"container/heap"
-	"container/list"
 	"fmt"
-	"strconv"
+	"log"
+	"regexp"
 	"sync"
 	"time"
+
+	"github.com/rpoletaev/test_jn/ttl"
 )
 
-var mu sync.RWMutex
-
 const (
-	//NX parameter to command
+	//NX parameter to set if not exist
 	NX = "nx"
 	//XX parameter to command
 	XX = "xx"
-	//EX parameter to command
+	//EX parameter to set expiration in SET command
 	EX = "ex"
 
 	//errors
@@ -30,119 +29,197 @@ type BaseItem struct {
 }
 
 type Base struct {
-	Number       int
+	Number int
+	sync.RWMutex
 	items        map[string]BaseItem
-	expiringKeys *ExpSignHeap
+	expiringKeys *ttl.ExpiringQueue
 }
 
 //Run creates instance of db and run job which cleans expired keys
 func (base *Base) Run() error {
 	base.items = make(map[string]BaseItem)
-	base.expiringKeys = &ExpSignHeap{}
-	heap.Init(base.expiringKeys)
-
-	//find expired keys and remove they
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for tick := range ticker.C {
-			for base.expiringKeys.Len() > 0 {
-				if (*base.expiringKeys)[0].expiration <= tick.Unix() {
-					heap.Remove(base.expiringKeys, 0)
-					delete(base.items, (*base.expiringKeys)[0].key)
-				} else {
-					break
-				}
-			}
-		}
-	}()
+	base.expiringKeys = ttl.CreateExpiringQueue(&ttl.ExpQueueOptions{
+		Period: time.Duration(5) * time.Second,
+		DoIfExpired: func(key string) {
+			base.Remove(key)
+		},
+		DoIfStoped: func() {
+			log.Println("Queue stopped")
+		},
+	})
 	return nil
 }
 
+func (base *Base) Stop() {
+	base.expiringKeys.Stop()
+	log.Println("Base ", base.Number, "is stopped")
+}
+
 //Keys return all matched keys
-func (base Base) Keys(patern string) []string {
-	if len(base.items) == 0 {
+func (base Base) Keys(patern string) ([]string, error) {
+	if base.Len() == 0 {
+		return nil, nil
+	}
+
+	allKeys := base.AllKeys()
+	if patern == "" {
+		return allKeys, nil
+	}
+
+	re, err := regexp.Compile(patern)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]string, len(allKeys)/2)
+	for _, key := range allKeys {
+		if re.MatchString(key) {
+			keys = append(keys, key)
+		}
+	}
+
+	return keys, nil
+}
+
+//AllKeys return all keys from base
+func (base *Base) AllKeys() []string {
+	if base.Len() == 0 {
 		return nil
 	}
 
 	keys := make([]string, len(base.items))
 	i := 0
+	base.RLock()
+	defer base.RUnlock()
 	for k := range base.items {
-		i++
 		keys[i] = k
+		i++
+	}
+	return keys
+}
+
+func (base *Base) Len() int {
+	base.RLock()
+	defer base.RUnlock()
+	return len(base.items)
+}
+
+// Get checks contains base key and return Item with true values
+// if key is expired then delete key from base and return empty Item and false
+func (base *Base) Get(key string) (BaseItem, bool) {
+
+	fmt.Printf("%v\n", *base)
+	base.RLock()
+	val, ok := base.items[key]
+	base.RUnlock()
+	if val.ExpTime <= time.Now().Unix() {
+		base.Remove(key)
+		return BaseItem{}, false
+	}
+	return val, ok
+}
+
+func (base *Base) Set(key string, bi BaseItem) {
+	base.Lock()
+	base.items[key] = bi
+	base.Unlock()
+}
+
+func (base *Base) SetIfNotExist(key string, value interface{}) bool {
+	_, exist := base.Get(key)
+	if exist {
+		return false
 	}
 
-	return keys
+	base.SetValue(key, value)
+	return true
+}
+
+func (base *Base) SetIfExist(key string, value interface{}) bool {
+	bi, exist := base.Get(key)
+	if !exist {
+		return false
+	}
+
+	bi.Value = value
+	base.Set(key, bi)
+	return true
+}
+
+//SetValue Set value to key
+func (base *Base) SetValue(key string, val interface{}) {
+	exp := int64(-1)
+	bi := BaseItem{val, exp}
+	base.Set(key, bi)
+}
+
+//SetValueWithTTL Set value to key then set ttl to key
+func (base *Base) SetValueWithTTL(key string, val interface{}, ttl int64) {
+	base.SetValue(key, val)
+	base.SetTTL(key, ttl)
 }
 
 //SetExpire set expiration time to key and add key to expiration heap.
 //return 1 if timeout was set and 0 if key does not exist
-func (base *Base) SetExpire(key string, seconds int) int {
-	val, ok := base.items[key]
+func (base *Base) SetTTL(key string, seconds int64) int64 {
+	val, ok := base.Get(key)
 	if !ok {
 		return 0
 	}
 
-	if val.ExpTime > 0 {
-		for i := 0; i < base.expiringKeys.Len(); i++ {
-			if (*base.expiringKeys)[i].key == key {
-				heap.Remove(base.expiringKeys, i)
-				break
-			}
-		}
-	}
-
 	expTime := time.Now().Add(time.Duration(seconds) * time.Second).Unix()
 	val.ExpTime = expTime
-	sign := ExpiringSign{
-		expiration: expTime,
-		key:        key,
+	sign := ttl.ExpiringSign{
+		Expiration: expTime,
+		Key:        key,
 	}
-	heap.Push(base.expiringKeys, sign)
-	base.items[key] = val
+	base.expiringKeys.Push(sign)
+	base.Set(key, val)
 	return 1
-}
-
-func (base *Base) SetValue(key string, val interface{}, params map[string]string) string {
-	exp := int64(-1)
-	if v, ok := params[EX]; ok {
-		intExp, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return format_err("WRONGTYPE", "Expiration must be an integer")
-		}
-
-		exp = intExp
-	}
-
-	bi := BaseItem{val, exp}
-	base.items[key] = bi
-	return format_ok()
 }
 
 //GetTTL returns -2 if the key does not exist
 //returns -1 if the key exists but has no associated expire
 //or returns remaining seconds
-func (base *Base) GetTTL(key string) string {
-	item, ok := base.items[key]
-	if !ok {
-		return format_int(-2)
+func (base *Base) GetTTL(key string) int64 {
+	if item, ok := base.Get(key); ok {
+		return item.ExpTime
 	}
 
-	return format_int(item.ExpTime)
+	return -2
 }
 
 //Get type name of value item
 //return error if wrong type
-func GetTypeName(key string) (typeName string, err error) {
-
-	switch val.(type) {
-	case *list.List:
-		return "List", nil
+func (base *Base) GetTypeName(key string) (typeName string, err error) {
+	item, ok := base.items[key]
+	if !ok {
+		return "", fmt.Errorf("key %s is not found", key)
+	}
+	switch item.Value.(type) {
+	// case *list:
+	// 	return "List", nil
 	case string:
 		return "String", nil
 	case map[string]interface{}:
 		return "Dictionary", nil
 	default:
-		return "", fmt.Errorf("%s has wrong type")
+		return "", fmt.Errorf("%s has wrong type", key)
 	}
+}
+
+//Remove remove item from base
+// returns count of removing keys
+func (base *Base) Remove(keys ...string) int64 {
+	var counter int64
+	for _, key := range keys {
+		if _, ok := base.Get(key); ok {
+			base.Lock()
+			delete(base.items, key)
+			base.Unlock()
+			counter++
+		}
+	}
+
+	return counter
 }

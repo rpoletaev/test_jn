@@ -1,6 +1,10 @@
-package test_juno
+package test_jn
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 //http://redis.io/topics/protocol#resp-protocol-description
 const (
@@ -13,7 +17,7 @@ const (
 
 //http://redis.io/topics/protocol#resp-errors
 func format_err(errType string, descr string) string {
-	return prf_err + errType + "\r\n" + descr + "\r\n"
+	return prf_err + errType + " " + descr + "\r\n"
 }
 
 //http://redis.io/topics/protocol#resp-simple-strings
@@ -27,12 +31,14 @@ func format_int(val int64) string {
 }
 
 //http://redis.io/topics/protocol#resp-bulk-strings
-func format_bulk(str string) string {
-	return prf_bulk + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + str + "\r\n"
+func format_bulk_string(str ...string) string {
+	fmt.Printf("%q\n", str)
+	fmt.Println(prf_bulk + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + strings.Join(str, "\r\n"))
+	return prf_bulk + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + strings.Join(str, "\r\n") + "\r\n"
 }
 
 //http://redis.io/topics/protocol#resp-arrays
-func format_array(length int) string {
+func format_array(val []interface{}, length int) string {
 	return prf_arr + strconv.FormatInt(int64(length), 10) + "\r\n"
 }
 

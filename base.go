@@ -192,13 +192,13 @@ func (base *Base) GetTTL(key string) int64 {
 //Get type name of value item
 //return error if wrong type
 func (base *Base) GetTypeName(key string) (typeName string, err error) {
-	item, ok := base.items[key]
+	item, ok := base.Get(key)
 	if !ok {
 		return "", fmt.Errorf("key %s is not found", key)
 	}
 	switch item.Value.(type) {
-	// case *list:
-	// 	return "List", nil
+	case *[]interface{}:
+		return "List", nil
 	case string:
 		return "String", nil
 	case map[string]interface{}:

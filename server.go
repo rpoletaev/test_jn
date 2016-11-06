@@ -3,11 +3,11 @@ package test_jn
 import (
 	"bufio"
 	"fmt"
+	"github.com/rpoletaev/test_jn/resp"
+	"github.com/xlab/closer"
 	"log"
 	"net"
 	"strings"
-
-	"github.com/xlab/closer"
 )
 
 const (
@@ -22,7 +22,7 @@ type ServerConfig struct {
 
 type command struct {
 	authRequired bool
-	command      handler
+	execute      handler
 	writeToAof   bool
 }
 
@@ -93,8 +93,10 @@ func (server *server) Run() {
 			server.clients[cli] = !server.Requirepass
 			log.Println("client connected")
 			for {
-				cmdName, prs := server.parseCommand(input)
-				log.Println(cmdName, " ", prs)
+				cmdName, prs, err := server.parseCommand(input)
+				if err != nil {
+					cli.reply(resp.FormatError(err))
+				}
 				cmd, exist := server.commands[cmdName]
 				if !exist {
 					cli.SendUnknownCommand(cmdName)
@@ -102,7 +104,7 @@ func (server *server) Run() {
 					if authenticated, ok := server.clients[cli]; ok && !authenticated && cmd.authRequired {
 						cli.SendNotAuthenticated()
 					} else {
-						cmd.command(cli, prs...)
+						cmd.execute(cli, prs...)
 					}
 				}
 			}
@@ -181,15 +183,18 @@ func (s *server) loadCommands() {
 	//LIST COMMANDS
 }
 
-func (s *server) parseCommand(input *bufio.Scanner) (name string, prs []string) {
+func (s *server) parseCommand(input *bufio.Scanner) (name string, prs []interface{}, err error) {
 	input.Scan()
-	fields := strings.Fields(input.Text())
-	name = strings.ToUpper(fields[0])
-	if len(fields) > 1 {
-		prs = fields[1:len(fields)]
-		return name, prs
+	src, err := resp.ParseRespString(input.Text())
+	if err != nil {
+		return "", nil, err
+	}
+	name = strings.ToUpper(src[0].(string))
+	if len(src) > 1 {
+		prs = src[1:len(src)]
+		return name, prs, nil
 	}
 
-	prs = []string{}
-	return name, prs
+	prs = []interface{}{}
+	return name, prs, nil
 }

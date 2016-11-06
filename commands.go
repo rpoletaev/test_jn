@@ -5,9 +5,9 @@ import (
 	"strconv"
 )
 
-type handler func(client *Client, params ...string)
+type handler func(client *Client, params ...interface{})
 
-func passCommand(c *Client, prs ...string) {
+func passCommand(c *Client, prs ...interface{}) {
 	if len(prs) < 1 {
 		c.SendWrongParamCount()
 		return
@@ -23,13 +23,8 @@ func passCommand(c *Client, prs ...string) {
 }
 
 //strings
-func getCommand(c *Client, prs ...string) {
-	if len(prs) < 1 {
-		c.SendWrongParamCount()
-		return
-	}
-
-	val, exist := c.base.Get(prs[0])
+func getCommand(c *Client, key string) {
+	val, exist := c.base.Get(key)
 	if exist {
 		switch str := val.Value.(type) {
 		case string:
@@ -46,7 +41,7 @@ func getCommand(c *Client, prs ...string) {
 	c.SendNil()
 }
 
-func setCommand(c *Client, prs ...string) {
+func setCommand(c *Client, prs ...interface{}) {
 	if len(prs) < 2 {
 		c.SendWrongParamCount()
 		return
@@ -60,16 +55,16 @@ func setCommand(c *Client, prs ...string) {
 				return
 			}
 
-			ttl, err := strconv.ParseInt(prs[3], 10, 64)
+			ttl, err := strconv.ParseInt(prs[3].(string), 10, 64)
 			if err != nil {
 				c.SendError("TTL must be an integer")
 				return
 			}
-			c.base.SetValueWithTTL(prs[0], prs[1], ttl)
+			c.base.SetValueWithTTL(prs[0].(string), prs[1], ttl)
 			c.SendOk()
 			return
 		case NX:
-			if c.base.SetIfNotExist(prs[0], prs[1]) {
+			if c.base.SetIfNotExist(prs[0].(string), prs[1]) {
 				c.SendInt(1)
 			} else {
 				c.SendInt(0)

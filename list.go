@@ -91,7 +91,7 @@ func (c *Client) ListLPop(key string) {
 	}
 
 	value := lpop(list)
-	c.reply(format_bulk_string(value))
+	c.reply(format_bulk_string(value.(string)))
 	return
 }
 

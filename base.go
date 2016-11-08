@@ -210,12 +210,12 @@ func (base *Base) GetTypeName(key string) (typeName string, err error) {
 
 //Remove remove item from base
 // returns count of removing keys
-func (base *Base) Remove(keys ...string) int64 {
+func (base *Base) Remove(keys ...interface{}) int64 {
 	var counter int64
 	for _, key := range keys {
-		if _, ok := base.Get(key); ok {
+		if _, ok := base.Get(key.(string)); ok {
 			base.Lock()
-			delete(base.items, key)
+			delete(base.items, key.(string))
 			base.Unlock()
 			counter++
 		}

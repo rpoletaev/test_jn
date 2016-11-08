@@ -1,54 +1,47 @@
 package resp
 
 import (
+	"bytes"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 //http://redis.io/topics/protocol#resp-protocol-description
-const (
-	prf_err  = '-'
-	prf_str  = '+'
-	prf_int  = ':'
-	prf_bulk = '$'
-	prf_arr  = '*'
-)
 
 var WrongCmdCommand error = errors.New("Wrong command format")
 
 //http://redis.io/topics/protocol#resp-errors
 func format_err(errType string, descr string) string {
-	return string(prf_err) + errType + " " + descr + "\r\n"
+	return "-" + errType + " " + descr + "\r\n"
 }
 
 //http://redis.io/topics/protocol#resp-simple-strings
 func format_str(str string) string {
-	return string(prf_str) + str + "\r\n"
+	return "+" + str + "\r\n"
 }
 
 //http://redis.io/topics/protocol#resp-integers
 func format_int(val int64) string {
-	return string(prf_int) + strconv.FormatInt(val, 10) + "\r\n"
+	return ":" + strconv.FormatInt(val, 10) + "\r\n"
 }
 
 //http://redis.io/topics/protocol#resp-bulk-strings
-func format_bulk_string(str ...string) string {
-	fmt.Printf("%q\n", str)
-	fmt.Println(string(prf_bulk) + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + strings.Join(str, "\r\n"))
-	return string(prf_bulk) + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + strings.Join(str, "\r\n") + "\r\n"
-}
+// func format_bulk_string(str ...string) string {
+// 	fmt.Printf("%q\n", str)
+// 	fmt.Println(string(prf_bulk) + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + strings.Join(str, "\r\n"))
+// 	return string(prf_bulk) + strconv.FormatInt(int64(len(str)), 10) + "\r\n" + strings.Join(str, "\r\n") + "\r\n"
+// }
 
 //http://redis.io/topics/protocol#resp-arrays
 func format_array(val []interface{}, length int) string {
-	return string(prf_arr) + strconv.FormatInt(int64(length), 10) + "\r\n"
+	return "*" + strconv.FormatInt(int64(length), 10) + "\r\n"
 }
 
 //http://redis.io/topics/protocol#nil-reply
 func format_nill() string {
-	return string(prf_bulk) + "-1\r\n"
+	return "$" + "-1\r\n"
 }
 
 func format_standart_err(descr string) string {
@@ -59,14 +52,9 @@ func format_ok() string {
 	return format_str("OK")
 }
 
-type RespCommand struct {
-	Name string
-	prs  []interface{}
-}
-
 func isArray(args []string) (yes bool, tail []string, itemsCount int64, err error) {
 	tail = args
-	if yes = tail[0][0] == prf_arr; !yes {
+	if yes = tail[0][0] == '*'; !yes {
 		return yes, tail, itemsCount, nil
 	}
 
@@ -79,9 +67,11 @@ func isArray(args []string) (yes bool, tail []string, itemsCount int64, err erro
 	return yes, tail, itemsCount, nil
 }
 
+// ParseIfInt check first entry in args if is int then return int value
+// cute args and returns tail of args
 func ParseIfInt(args []string) (yes bool, result int64, tail []string, err error) {
 	tail = args
-	if yes = tail[0][0] == prf_int; !yes {
+	if yes = tail[0][0] == ':'; !yes {
 		return yes, result, tail, nil
 	}
 
@@ -98,9 +88,11 @@ func ParseIfInt(args []string) (yes bool, result int64, tail []string, err error
 	return yes, result, tail, err
 }
 
+// ParseIfString check first entry in args if is simple string then return string value
+// cute args and returns tail of args
 func ParseIfString(args []string) (yes bool, result string, tail []string, err error) {
 	tail = args
-	if yes = tail[0][0] == prf_str; !yes {
+	if yes = tail[0][0] == '+'; !yes {
 		return yes, result, tail, nil
 	}
 
@@ -113,9 +105,11 @@ func ParseIfString(args []string) (yes bool, result string, tail []string, err e
 	return yes, result, tail, nil
 }
 
+// ParseIfError check first entry in args if is error then return error value
+// cute args and returns tail of args
 func ParseIfError(args []string) (yes bool, result error, tail []string, err error) {
 	tail = args
-	if yes = tail[0][0] == prf_err; !yes {
+	if yes = tail[0][0] == '-'; !yes {
 		return yes, result, tail, nil
 	}
 
@@ -128,9 +122,11 @@ func ParseIfError(args []string) (yes bool, result error, tail []string, err err
 	return yes, result, tail, nil
 }
 
+// ParseIfBulkString check first entry in args if is bulk then return string value
+// cute args and returns tail of args
 func ParseIfBulkString(args []string) (yes bool, result string, tail []string, err error) {
 	tail = args
-	if yes = tail[0][0] == prf_bulk; !yes {
+	if yes = tail[0][0] == '$'; !yes {
 		return yes, result, tail, nil
 	}
 
@@ -152,6 +148,7 @@ func ParseIfBulkString(args []string) (yes bool, result string, tail []string, e
 	return yes, result, tail, nil
 }
 
+// ParseArray returns array values from RESP array
 func ParseArray(args []string, len int64) (result []interface{}, tail []string, err error) {
 	//*2\r\n
 	//$4\r\n
@@ -161,7 +158,6 @@ func ParseArray(args []string, len int64) (result []interface{}, tail []string, 
 	tail = args
 	result = make([]interface{}, len)
 	for i := 0; i < int(len); i++ {
-		fmt.Printf("qurrent tail %q\n", tail)
 		var ok bool
 		var res interface{}
 		//Check Integer
@@ -230,6 +226,7 @@ func ParseArray(args []string, len int64) (result []interface{}, tail []string, 
 	return result, tail, nil
 }
 
+// ParseRespString returns array values from RESP string
 func ParseRespString(src string) (result []interface{}, err error) {
 	tail := strings.Split(src, "\r\n")
 	tail = tail[:len(tail)-1]
@@ -256,6 +253,7 @@ func ParseRespString(src string) (result []interface{}, err error) {
 		}
 
 		if ok {
+			println("it is string", res)
 			result = append(result, res)
 			continue
 		}
@@ -303,44 +301,42 @@ func ParseRespString(src string) (result []interface{}, err error) {
 	return result, nil
 }
 
-func FormatInt(val int) string {
-	return fmt.Sprintf("%s%d\r\n", prf_int, val)
+// FormatInt returns resp int
+func FormatInt(val int64) string {
+	return ":" + strconv.FormatInt(val, 10) + "\r\n"
 }
 
+// FormatBulkString returns resp bulk string
 func FormatBulkString(val string) string {
-	return string(prf_bulk) + strconv.FormatInt(int64(utf8.RuneCountInString(val)), 10) + "\r\n" + val + "\r\n"
+	return "$" + strconv.FormatInt(int64(utf8.RuneCountInString(val)), 10) + "\r\n" + val + "\r\n"
 }
 
+// FormatError returns resp error from error
 func FormatError(val error) string {
-	return fmt.Sprintf("%r%s\r\n", prf_err, val)
+	return "-" + val.Error() + "\r\n"
 }
 
+// FormatErrorFromString returns resp error from string
+func FormatErrorFromString(val string) string {
+	return "-" + val + "\r\n"
+}
+
+// FormatString returns resp simple string
 func FormatString(val string) string {
-	return fmt.Sprintf("%r%s\r\n", prf_str, val)
+	return "+" + val + "\r\n"
 }
 
-func FormatArray(arr []interface{}) (string, error) {
-	str := fmt.Sprintf("%s%d\r\n", prf_arr, len(arr))
-
-	for i, item := range arr {
-		switch item.(type) {
-		case string:
-			str += FormatString(item.(string))
-		case []interface{}:
-			f, err := FormatArray(item.([]interface{}))
-			if err != nil {
-				return "", err
-			}
-			str += f
-			break
-		case error:
-			str += FormatError(item.(error))
-		case int:
-			str += FormatInt(item.(int))
-		default:
-			return "", fmt.Errorf("item %d of array %q has wrong value", i, arr)
-		}
+// FormatBulkStringArray returns resp bulk string array
+func FormatBulkStringArray(prs []string) []byte {
+	var buf bytes.Buffer
+	buf.WriteString("*" + strconv.FormatInt(int64(len(prs)), 10) + "\r\n")
+	for _, prm := range prs {
+		buf.WriteString(FormatBulkString(prm))
 	}
+	return buf.Bytes()
+}
 
-	return str, nil
+// FormatNill return resp nil string
+func FormatNill() string {
+	return "$-1\r\n"
 }

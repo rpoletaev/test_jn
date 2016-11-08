@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
+
+	"github.com/rpoletaev/test_jn/resp"
 )
 
 func main() {
@@ -14,14 +17,38 @@ func main() {
 		return
 	}
 	defer con.Close()
+	buf := make([]byte, 64*1024)
 
 	for {
 		fmt.Print(">")
 		reader := bufio.NewReader(os.Stdin)
-		txt, _, _ := reader.ReadLine()
-		fmt.Fprintln(con, string(txt))
+		cmd, _, _ := reader.ReadLine()
+		fields := strings.Fields(string(cmd))
+		respCmd := resp.FormatBulkStringArray(fields)
+		con.Write(respCmd)
+		con.Read(buf)
+		response, _ := resp.ParseRespString(string(buf))
+		printArray(response)
+	}
+}
 
-		line, _ := bufio.NewReader(con).ReadString('\n')
-		fmt.Println(line)
+func printArray(arr []interface{}) {
+	for _, val := range arr {
+		switch val.(type) {
+		case string:
+			println(val.(string))
+			break
+		case []interface{}:
+			printArray(val.([]interface{}))
+			break
+		case int64:
+			println("(integer) ", val.(string))
+			break
+		case error:
+			println(val.(string))
+			break
+		default:
+			break
+		}
 	}
 }

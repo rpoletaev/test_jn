@@ -3,11 +3,12 @@ package test_jn
 import (
 	"bufio"
 	"fmt"
-	"github.com/rpoletaev/test_jn/resp"
-	"github.com/xlab/closer"
 	"log"
 	"net"
 	"strings"
+
+	"github.com/rpoletaev/test_jn/resp"
+	"github.com/xlab/closer"
 )
 
 const (
@@ -82,7 +83,7 @@ func (server *server) Run() {
 				nc.Close()
 			}()
 
-			input := bufio.NewScanner(nc)
+			input := bufio.NewReader(nc)
 			cli := &Client{
 				authorized: !server.Requirepass,
 				base:       server.bases[0],
@@ -142,15 +143,15 @@ func (s *server) loadCommands() {
 
 	s.commands["CMDS"] = command{
 		false,
-		func(cli *Client, prs ...string) {
+		func(cli *Client, prs ...interface{}) {
 			cmds := make([]string, len(s.commands))
-			var counter int = 0
-			for kc, _ := range s.commands {
+			var counter int
+			for kc := range s.commands {
 				cmds[counter] = kc
 				counter++
 			}
-
-			cli.reply(format_bulk_string(cmds...))
+			respArr := resp.FormatBulkStringArray(cmds)
+			cli.reply(string(respArr))
 		},
 		false,
 	}
@@ -181,17 +182,114 @@ func (s *server) loadCommands() {
 	}
 
 	//LIST COMMANDS
+	s.commands["LPUSH"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 2 {
+				cli.SendWrongParamCount()
+			}
+
+			cli.ListLPush(prs[0].(string), prs[1:])
+		},
+		true,
+	}
+
+	s.commands["RPUSH"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 2 {
+				cli.SendWrongParamCount()
+			}
+			cli.ListRPush(prs[0].(string), prs[1:])
+		},
+		true,
+	}
+
+	s.commands["LPOP"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 1 {
+				cli.SendWrongParamCount()
+			}
+			cli.ListLPop(prs[0].(string))
+		},
+		false,
+	}
+
+	s.commands["RPOP"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 1 {
+				cli.SendWrongParamCount()
+			}
+			cli.ListRPop(prs[0].(string))
+		},
+		false,
+	}
+
+	s.commands["LINDEX"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 2 {
+				cli.SendWrongParamCount()
+			}
+			cli.ListIndex(prs[0].(string), prs[1].(int))
+		},
+		false,
+	}
+
+	s.commands["LREM"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 2 {
+				cli.SendWrongParamCount()
+			}
+
+			cli.ListRemove(prs[0].(string), prs[1].(int))
+		},
+		true,
+	}
+
+	s.commands["LINSERT"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 3 {
+				cli.SendWrongParamCount()
+			}
+
+			cli.ListInsertAfter(prs[0].(string), prs[1].(int), prs[2])
+		},
+		true,
+	}
+
+	s.commands["LINSERT"] = command{
+		true,
+		func(cli *Client, prs ...interface{}) {
+			if len(prs) < 3 {
+				cli.SendWrongParamCount()
+			}
+
+			cli.ListInsertAfter(prs[0].(string), prs[1].(int), prs[2])
+		},
+		true,
+	}
 }
 
-func (s *server) parseCommand(input *bufio.Scanner) (name string, prs []interface{}, err error) {
-	input.Scan()
-	src, err := resp.ParseRespString(input.Text())
+func (s *server) parseCommand(input *bufio.Reader) (name string, prs []interface{}, err error) {
+	buf := make([]byte, 64*1024)
+	c, err := input.Read(buf)
+	if err != nil {
+		println(err)
+		return
+	}
+	src, err := resp.ParseRespString(string(buf[:c]))
 	if err != nil {
 		return "", nil, err
 	}
-	name = strings.ToUpper(src[0].(string))
-	if len(src) > 1 {
-		prs = src[1:len(src)]
+	commandArray := src[0].([]interface{})
+	name = strings.ToUpper(commandArray[0].(string))
+	if len(commandArray) > 1 {
+		prs = commandArray[1:]
 		return name, prs, nil
 	}
 

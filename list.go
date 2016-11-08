@@ -2,6 +2,8 @@ package test_jn
 
 import (
 	"fmt"
+
+	"github.com/rpoletaev/test_jn/resp"
 )
 
 func lpush(l *[]interface{}, newList []interface{}) {
@@ -64,35 +66,34 @@ func (c *Client) GetList(key string) (*[]interface{}, error) {
 func (c *Client) ListLPush(key string, values []interface{}) {
 	list, err := c.GetList(key)
 	if err != nil {
-		c.reply(format_standart_err(err.Error()))
+		c.SendError(err.Error())
 		return
 	}
 
 	lpush(list, values)
-	c.reply(format_ok())
+	c.SendOk()
 }
 
 func (c *Client) ListRPush(key string, values []interface{}) {
 	list, err := c.GetList(key)
 	if err != nil {
-		c.reply(format_standart_err(err.Error()))
+		c.SendError(err.Error())
 		return
 	}
 
 	rpush(list, values)
-	c.reply(format_ok())
+	c.SendOk()
 }
 
 func (c *Client) ListLPop(key string) {
 	list, err := c.GetList(key)
 	if err != nil {
-		c.reply(format_standart_err(err.Error()))
+		c.SendError(err.Error())
 		return
 	}
 
 	value := lpop(list)
-	c.reply(format_bulk_string(value.(string)))
-	return
+	c.reply(resp.FormatBulkString(value.(string)))
 }
 
 func (c *Client) ListRPop(key string) (interface{}, error) {

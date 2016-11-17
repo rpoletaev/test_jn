@@ -1,13 +1,15 @@
 package test_jn
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"net"
+
 	"strings"
 
-	"github.com/rpoletaev/test_jn/resp"
+	"strconv"
+
+	"github.com/rpoletaev/respio"
 	"github.com/xlab/closer"
 )
 
@@ -29,7 +31,7 @@ type command struct {
 
 type server struct {
 	*ServerConfig
-	clients  map[*Client]bool
+	clients  map[*client]bool
 	bases    []*Base
 	commands map[string]command
 }
@@ -37,9 +39,9 @@ type server struct {
 //CreateServer Creates server with default config
 func CreateServer() *server {
 	defaultCfg := &ServerConfig{
-		Port:        2020,
-		Requirepass: true,
-		Password:    "roma",
+		Port: 2020,
+		// Requirepass: true,
+		// Password:    "roma",
 	}
 
 	return CreateServerWithConfig(defaultCfg)
@@ -49,17 +51,17 @@ func CreateServer() *server {
 func CreateServerWithConfig(c *ServerConfig) *server {
 	return &server{
 		c,
-		make(map[*Client]bool),
+		make(map[*client]bool),
 		nil,
 		make(map[string]command),
 	}
-
 }
 
-func (server *server) Run() {
+func (server *server) Run() error {
 	defer closer.Close()
 	if err := server.initBases(); err != nil {
-		log.Fatal(err)
+		// log.Fatal(err)
+		return err
 	}
 
 	server.loadCommands()
@@ -67,6 +69,7 @@ func (server *server) Run() {
 	l, err := net.Listen("tcp", fmt.Sprint(":", server.Port))
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
 	defer l.Close()
 
@@ -75,35 +78,40 @@ func (server *server) Run() {
 	for {
 		con, err := l.Accept()
 		if err != nil {
-			log.Fatal(err)
+			// log.Fatal(err)
+			return err
 		}
 
 		go func(nc net.Conn) {
 			defer func() {
 				nc.Close()
+				log.Println("Exit from client routine")
 			}()
 
-			input := bufio.NewReader(nc)
-			cli := &Client{
+			cli := &client{
 				authorized: !server.Requirepass,
 				base:       server.bases[0],
 				srv:        server,
 				con:        nc,
+				reader:     respio.NewReader(nc),
+				writer:     respio.NewWriter(nc),
 			}
 
 			server.clients[cli] = !server.Requirepass
 			log.Println("client connected")
 			for {
-				cmdName, prs, err := server.parseCommand(input)
+				cmdName, prs, err := cli.reader.ReadCommand()
 				if err != nil {
-					cli.reply(resp.FormatError(err))
+					cli.writer.SendError(err.Error())
+					return
 				}
-				cmd, exist := server.commands[cmdName]
+				cmd, exist := server.commands[strings.ToUpper(cmdName)]
 				if !exist {
-					cli.SendUnknownCommand(cmdName)
+					println("unknown command")
+					cli.sendUnknownCommand(cmdName)
 				} else {
 					if authenticated, ok := server.clients[cli]; ok && !authenticated && cmd.authRequired {
-						cli.SendNotAuthenticated()
+						cli.sendNotAuthenticated()
 					} else {
 						cmd.execute(cli, prs...)
 					}
@@ -143,15 +151,11 @@ func (s *server) loadCommands() {
 
 	s.commands["CMDS"] = command{
 		false,
-		func(cli *Client, prs ...interface{}) {
-			cmds := make([]string, len(s.commands))
-			var counter int
+		func(cli *client, prs ...interface{}) {
+			cli.writer.SendArray(int64(len(s.commands)))
 			for kc := range s.commands {
-				cmds[counter] = kc
-				counter++
+				cli.writer.SendBulkString(kc)
 			}
-			respArr := resp.FormatBulkStringArray(cmds)
-			cli.reply(string(respArr))
 		},
 		false,
 	}
@@ -184,115 +188,190 @@ func (s *server) loadCommands() {
 	//LIST COMMANDS
 	s.commands["LPUSH"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 2 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
 
-			cli.ListLPush(prs[0].(string), prs[1:])
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+			cli.ListLPush(key, prs[1:])
 		},
 		true,
 	}
 
 	s.commands["RPUSH"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 2 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
-			cli.ListRPush(prs[0].(string), prs[1:])
+
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+			cli.ListRPush(key, prs[1:])
 		},
 		true,
 	}
 
 	s.commands["LPOP"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 1 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
-			cli.ListLPop(prs[0].(string))
+
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+			cli.ListLPop(key)
 		},
 		false,
 	}
 
 	s.commands["RPOP"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 1 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
-			cli.ListRPop(prs[0].(string))
+
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+			cli.ListRPop(key)
 		},
 		false,
 	}
 
 	s.commands["LINDEX"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 2 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
-			cli.ListIndex(prs[0].(string), prs[1].(int))
+
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+
+			idx, err := strconv.Atoi(string(prs[1].([]byte)))
+			if err != nil {
+				cli.sendWrongParamType("Integer")
+				return
+			}
+			cli.ListIndex(key, idx)
 		},
 		false,
 	}
 
 	s.commands["LREM"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 2 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
 
-			cli.ListRemove(prs[0].(string), prs[1].(int))
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+
+			idx, err := strconv.Atoi(string(prs[1].([]byte)))
+			if err != nil {
+				cli.sendWrongParamType("Integer")
+				return
+			}
+
+			cli.ListRemove(key, idx)
 		},
 		true,
 	}
 
 	s.commands["LINSERT"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 3 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
 
-			cli.ListInsertAfter(prs[0].(string), prs[1].(int), prs[2])
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+
+			idx, err := strconv.Atoi(string(prs[1].([]byte)))
+			if err != nil {
+				cli.sendWrongParamType("Integer")
+				return
+			}
+
+			cli.ListSetIndex(key, idx, prs[2])
 		},
 		true,
 	}
 
-	s.commands["LINSERT"] = command{
+	s.commands["LINSAFT"] = command{
 		true,
-		func(cli *Client, prs ...interface{}) {
+		func(cli *client, prs ...interface{}) {
 			if len(prs) < 3 {
-				cli.SendWrongParamCount()
+				cli.sendWrongParamCount()
+				return
 			}
 
-			cli.ListInsertAfter(prs[0].(string), prs[1].(int), prs[2])
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+
+			idx, err := strconv.Atoi(string(prs[1].([]byte)))
+			if err != nil {
+				cli.sendWrongParamType("Integer")
+				return
+			}
+			cli.ListInsertAfter(key, idx, prs[2])
 		},
 		true,
 	}
-}
 
-func (s *server) parseCommand(input *bufio.Reader) (name string, prs []interface{}, err error) {
-	buf := make([]byte, 64*1024)
-	c, err := input.Read(buf)
-	if err != nil {
-		println(err)
-		return
-	}
-	src, err := resp.ParseRespString(string(buf[:c]))
-	if err != nil {
-		return "", nil, err
-	}
-	commandArray := src[0].([]interface{})
-	name = strings.ToUpper(commandArray[0].(string))
-	if len(commandArray) > 1 {
-		prs = commandArray[1:]
-		return name, prs, nil
-	}
+	s.commands["LLEN"] = command{
+		true,
+		func(cli *client, prs ...interface{}) {
+			if len(prs) != 1 {
+				cli.sendWrongParamCount()
+				return
+			}
 
-	prs = []interface{}{}
-	return name, prs, nil
+			key, err := getStringFromParam(prs[0])
+			if err != nil {
+				cli.sendError(err.Error())
+				return
+			}
+
+			cli.ListLength(key)
+		},
+		true,
+	}
 }

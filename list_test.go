@@ -68,10 +68,10 @@ func TestListRPop(t *testing.T) {
 
 func TestListInsertAfter(t *testing.T) {
 	println("TestListInsertAfter")
-	l := &[]interface{}{1, 2, 4, 5}
-	insertAfter(l, 1, 3)
-	if fmt.Sprintf("%q", *l) != fmt.Sprintf("%q", []interface{}{1, 2, 3, 4, 5}) {
-		t.Errorf("Expected %q got %q\n", []interface{}{1, 2, 3, 4, 5}, *l)
+	l := []interface{}{1, 2, 4, 5}
+	insertAfter(&l, 1, 3)
+	if fmt.Sprintf("%q", l) != fmt.Sprintf("%q", []interface{}{1, 2, 3, 4, 5}) {
+		t.Errorf("Expected %q got %q\n", []interface{}{1, 2, 3, 4, 5}, l)
 	}
 }
 

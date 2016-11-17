@@ -1,45 +1,41 @@
 package test_jn
 
-import (
-	"github.com/rpoletaev/test_jn/resp"
-)
-
-func (c *Client) hSet(key string, hkey string, value interface{}) {
+func (c *client) hSet(key string, hkey string, value interface{}) {
 	val, ok := c.base.Get(key)
 	if ok {
-		switch val.Value.(type) {
+		switch v := val.Value.(type) {
 		case *map[string]string:
-			(*(val.Value.(*map[string]string)))[hkey] = value.(string)
-			c.SendOk()
+			(*v)[hkey] = value.(string)
+			c.sendOk()
 			return
 		default:
-			c.SendWrongType()
+			c.sendWrongType()
 			return
 		}
 	}
 	mp := make(map[string]string)
 	mp[hkey] = value.(string)
-	c.base.SetValue(key, mp)
-	c.SendOk()
+	c.base.SetValue(key, &mp)
+	c.sendOk()
 }
 
-func (c *Client) hGet(key, hkey string) {
+func (c *client) hGet(key, hkey string) {
 	val, ok := c.base.Get(key)
 	if !ok {
-		c.reply(resp.FormatNill())
+		c.writer.SendNil()
 	}
 
-	switch val.Value.(type) {
+	switch mp := val.Value.(type) {
 	case *map[string]string:
-		val, ok := (*(val.Value.(*map[string]string)))[hkey]
+		v, ok := (*mp)[hkey]
 		if ok {
-			c.reply(resp.FormatBulkString(val))
+			c.sendString(v)
 			return
 		}
-		c.reply(resp.FormatNill())
+		c.writer.SendNil()
 		return
 	default:
-		c.SendWrongType()
+		c.sendWrongType()
 		return
 	}
 }

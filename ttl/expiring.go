@@ -91,7 +91,7 @@ func defaultOptions() *ExpQueueOptions {
 	return &ExpQueueOptions{
 		Period: time.Duration(defaultPeriod),
 		DoIfExpired: func(key string) {
-			println(key)
+			// println(key)
 		},
 		DoIfStoped: func() {
 			println("expiring queue stopped")

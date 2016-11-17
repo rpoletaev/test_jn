@@ -4,43 +4,53 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/rpoletaev/test_jn/resp"
+	"github.com/rpoletaev/respio"
 )
 
-type Client struct {
+type client struct {
 	authorized bool
 	base       *Base
 	srv        *server
 	con        net.Conn
+	reader     *respio.RESPReader
+	writer     *respio.RESPWriter
 }
 
-func (cli *Client) reply(str string) {
-	fmt.Fprint(cli.con, str)
+func (c *client) sendString(str string) {
+	c.writer.SendBulkString(str)
 }
 
-func (c *Client) SendNotAuthenticated() {
-	c.reply(resp.FormatErrorFromString("Not Authenticated Use PASS your_password"))
+func (c *client) sendSimpleString(str string) {
+	c.writer.SendSimpleString(str)
 }
 
-func (c *Client) SendWrongPassword() {
-	c.reply(resp.FormatErrorFromString("NotAuthenticated WrongPassword"))
+func (c *client) sendOk() {
+	c.writer.SendSimpleString("OK")
 }
 
-func (c *Client) SendWrongType() {
-	c.reply(resp.FormatErrorFromString("WRONGTYPE Operation against a key holding the wrong kind of value"))
-}
-func (c *Client) SendError(err string) {
-	c.reply(resp.FormatErrorFromString(err))
+func (c *client) sendNotAuthenticated() {
+	c.writer.SendError("Not Authenticated Use PASS your_password")
 }
 
-func (c *Client) SendUnknownCommand(name string) {
-	c.reply(resp.FormatErrorFromString("UnknownCommand USE CMDS to get command list"))
+func (c *client) sendWrongPassword() {
+	c.writer.SendError("NotAuthenticated WrongPassword")
 }
 
-func (c *Client) SendWrongParamCount() {
-	c.reply(resp.FormatErrorFromString("wrong count of argument"))
+func (c *client) sendWrongType() {
+	c.writer.SendError("WRONGTYPE Operation against a key holding the wrong kind of value")
+}
+func (c *client) sendError(err string) {
+	c.writer.SendError(err)
 }
 
-func (c *Client) SendOk() {
-	c.reply(resp.FormatString("OK"))
+func (c *client) sendUnknownCommand(name string) {
+	c.writer.SendError("UnknownCommand USE CMDS to get command list")
+}
+
+func (c *client) sendWrongParamCount() {
+	c.writer.SendError("Wrong count of argument")
+}
+
+func (c *client) sendWrongParamType(exp string) {
+	c.writer.SendError(fmt.Sprintf("Unexpected param type. Expecting %s\n", exp))
 }

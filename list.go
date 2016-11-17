@@ -2,8 +2,6 @@ package test_jn
 
 import (
 	"fmt"
-
-	"github.com/rpoletaev/test_jn/resp"
 )
 
 func lpush(l *[]interface{}, newList []interface{}) {
@@ -46,14 +44,14 @@ func IsList(value interface{}) bool {
 	case *[]interface{}:
 		return true
 	default:
-		return true
+		return false
 	}
 }
 
-func (c *Client) GetList(key string) (*[]interface{}, error) {
+func (c *client) GetList(key string) (*[]interface{}, error) {
 	item, ok := c.base.Get(key)
 	if !ok {
-		return nil, fmt.Errorf("Key is not found")
+		return nil, nil
 	}
 
 	if !IsList(item.Value) {
@@ -63,100 +61,159 @@ func (c *Client) GetList(key string) (*[]interface{}, error) {
 	return item.Value.(*[]interface{}), nil
 }
 
-func (c *Client) ListLPush(key string, values []interface{}) {
+func (c *client) ListLPush(key string, values []interface{}) {
 	list, err := c.GetList(key)
 	if err != nil {
-		c.SendError(err.Error())
+		c.sendError(err.Error())
+		return
+	}
+
+	if list == nil {
+		lst := make([]interface{}, len(values))
+		copy(lst, values)
+		c.base.SetValue(key, &lst)
+		c.sendOk()
 		return
 	}
 
 	lpush(list, values)
-	c.SendOk()
+	c.sendOk()
 }
 
-func (c *Client) ListRPush(key string, values []interface{}) {
+func (c *client) ListRPush(key string, values []interface{}) {
 	list, err := c.GetList(key)
 	if err != nil {
-		c.SendError(err.Error())
+		c.sendError(err.Error())
+		return
+	}
+
+	if list == nil {
+		lst := make([]interface{}, len(values))
+		copy(lst, values)
+		c.base.SetValue(key, &lst)
+		c.sendOk()
 		return
 	}
 
 	rpush(list, values)
-	c.SendOk()
+	c.sendOk()
 }
 
-func (c *Client) ListLPop(key string) {
+func (c *client) ListLPop(key string) {
 	list, err := c.GetList(key)
 	if err != nil {
-		c.SendError(err.Error())
+		c.sendError(err.Error())
 		return
 	}
 
 	value := lpop(list)
-	c.reply(resp.FormatBulkString(value.(string)))
+	c.writer.SendBulk(value.([]byte))
+	c.writer.Flush()
 }
 
-func (c *Client) ListRPop(key string) (interface{}, error) {
+func (c *client) ListRPop(key string) {
 	list, err := c.GetList(key)
 	if err != nil {
-		return nil, err
+		c.sendError(err.Error())
+		return
 	}
 
 	value := rpop(list)
-	return value, nil
+	c.writer.SendBulk(value.([]byte))
+	c.writer.Flush()
 }
 
-func (c *Client) ListIndex(key string, i int) (interface{}, error) {
+func (c *client) ListIndex(key string, i int) {
 	list, err := c.GetList(key)
 	if err != nil {
-		return nil, err
+		c.sendError(err.Error())
+		return
 	}
 
-	if len(*list) >= i {
-		return nil, fmt.Errorf("List has'nt index %d", i)
+	if i < 0 {
+		c.sendError("Index should be greather than 0")
+		return
 	}
 
-	return (*list)[i], nil
+	if len(*list) <= i {
+		fmt.Printf("List '%s': %v", key, *list)
+		c.sendError(fmt.Sprintf("list has lenght %d. List has'nt index %d\n", len(*list), i))
+		return
+	}
+
+	c.writer.SendBulk((*list)[i].([]byte))
+	c.writer.Flush()
 }
 
-func (c *Client) ListInsertAfter(key string, i int, value interface{}) error {
+func (c *client) ListInsertAfter(key string, i int, value interface{}) {
 	list, err := c.GetList(key)
 	if err != nil {
-		return err
+		c.sendError(err.Error())
+		return
 	}
 
-	if len(*list) >= i {
-		return fmt.Errorf("List has'nt index %d", i)
+	if i < 0 {
+		c.sendError("Index should be greather than 0")
+		return
+	}
+
+	if len(*list) <= i {
+		c.sendError(fmt.Sprintf("List has'nt index %d", i))
+		return
 	}
 
 	insertAfter(list, i, value)
-	return nil
+	c.sendOk()
 }
 
-func (c *Client) ListRemove(key string, i int) error {
+func (c *client) ListRemove(key string, i int) {
 	list, err := c.GetList(key)
 	if err != nil {
-		return err
+		c.sendError(err.Error())
 	}
 
-	if len(*list) >= i {
-		return fmt.Errorf("List has'nt index %d", i)
+	if i < 0 {
+		c.sendError("Index should be greather than 0")
+		return
+	}
+
+	if len(*list) <= i {
+		c.sendError(fmt.Sprintf("List has'nt index %d", i))
+		return
 	}
 
 	deleteIndex(list, i)
-	return nil
+	c.sendOk()
 }
 
-func (c *Client) ListSetIndex(key string, i int, value interface{}) error {
+func (c *client) ListSetIndex(key string, i int, value interface{}) {
 	list, err := c.GetList(key)
 	if err != nil {
-		return err
+		c.sendError(err.Error())
+		return
+	}
+
+	if i < 0 {
+		c.sendError("Index should be greather than 0")
+		return
 	}
 
 	if len(*list) >= i {
-		return fmt.Errorf("List has'nt index %d", i)
+		c.sendError(fmt.Sprintf("List has'nt index %d", i))
+		return
 	}
 
 	(*list)[i] = value
-	return nil
+	c.sendOk()
+}
+
+func (c *client) ListLength(key string) {
+	list, err := c.GetList(key)
+	if err != nil {
+		c.sendError(err.Error())
+		return
+	}
+
+	c.writer.SendRESPInt(int64(len(*list)))
+	c.writer.Flush()
 }

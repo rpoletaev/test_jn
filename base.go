@@ -107,12 +107,10 @@ func (base *Base) Len() int {
 // Get checks contains base key and return Item with true values
 // if key is expired then delete key from base and return empty Item and false
 func (base *Base) Get(key string) (BaseItem, bool) {
-
-	fmt.Printf("%v\n", *base)
 	base.RLock()
 	val, ok := base.items[key]
 	base.RUnlock()
-	if val.ExpTime <= time.Now().Unix() {
+	if val.ExpTime >= 0 && val.ExpTime <= time.Now().Unix() {
 		base.Remove(key)
 		return BaseItem{}, false
 	}
@@ -210,16 +208,8 @@ func (base *Base) GetTypeName(key string) (typeName string, err error) {
 
 //Remove remove item from base
 // returns count of removing keys
-func (base *Base) Remove(keys ...interface{}) int64 {
-	var counter int64
-	for _, key := range keys {
-		if _, ok := base.Get(key.(string)); ok {
-			base.Lock()
-			delete(base.items, key.(string))
-			base.Unlock()
-			counter++
-		}
-	}
-
-	return counter
+func (base *Base) Remove(key string) {
+	base.Lock()
+	delete(base.items, key)
+	base.Unlock()
 }

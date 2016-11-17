@@ -9,7 +9,6 @@ func main() {
 	defer closer.Close()
 	srv := test_jn.CreateServer()
 	closer.Bind(srv.Stop)
-	srv.Run()
-	// time.Sleep(5 * time.Second)
+	closer.Checked(srv.Run, true)
 	closer.Hold()
 }

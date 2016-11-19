@@ -25,4 +25,4 @@ supporting commands:
 * CMDS  - returns list of all commands
 --------------------------------------
 ### instalation
-go get github.com/rpoletaev/test_jn
+```go get github.com/rpoletaev/test_jn```

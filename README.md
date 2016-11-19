@@ -9,6 +9,8 @@ supporting commands:
 * SET - set value
 * DEL - delete key
 * KEYS  - list of all keys
+* EXPIRE - setup expiration seconds
+* TTL - returns ttl for key
 
 * RPUSH - push to end list
 * LPUSH - push to start list
@@ -21,3 +23,6 @@ supporting commands:
 * LLEN  - returns length of list
 
 * CMDS  - returns list of all commands
+--------------------------------------
+### instalation
+go get github.com/rpoletaev/test_jn

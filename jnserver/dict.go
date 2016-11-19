@@ -1,4 +1,4 @@
-package test_jn
+package jnserver
 
 func (c *client) hSet(key string, hkey string, value interface{}) {
 	val, ok := c.base.Get(key)

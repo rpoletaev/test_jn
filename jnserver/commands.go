@@ -1,4 +1,4 @@
-package test_jn
+package jnserver
 
 import "strconv"
 import "fmt"
@@ -130,6 +130,17 @@ func keysCommand(c *client, patern ...interface{}) {
 	return
 }
 
+func getTTLCommand(c *client, prs ...interface{}) {
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		c.sendError(err.Error())
+		return
+	}
+
+	c.writer.SendRESPInt(c.base.GetTTL(key))
+	c.writer.Flush()
+}
+
 func delCommand(c *client, keys ...interface{}) {
 	for _, k := range keys {
 		c.base.Remove(string(k.([]byte)))
@@ -137,6 +148,49 @@ func delCommand(c *client, keys ...interface{}) {
 
 	c.writer.SendRESPInt(int64(len(keys)))
 	c.writer.Flush()
+}
+
+func expireCommand(c *client, prs ...interface{}) {
+	if len(prs) != 2 {
+		c.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		c.sendError(err.Error())
+		return
+	}
+
+	ttl, err := strconv.ParseInt(string(prs[1].([]byte)), 10, 64)
+	if err != nil {
+		c.sendWrongParamType("Integer")
+		return
+	}
+
+	c.writer.SendRESPInt(c.base.SetTTL(key, ttl))
+	c.writer.Flush()
+}
+
+func selectDBCommand(c *client, prs ...interface{}) {
+	if len(prs) != 1 {
+		c.sendWrongParamCount()
+		return
+	}
+
+	dbnum, err := strconv.ParseInt(string(prs[0].([]byte)), 10, 64)
+	if err != nil {
+		c.sendWrongParamType("Integer")
+		return
+	}
+
+	if int64(len(c.srv.bases)) <= dbnum {
+		c.sendError(fmt.Sprintln("Server has`nt db with num ", dbnum))
+		return
+	}
+
+	c.base = c.srv.bases[dbnum]
+	c.sendOk()
 }
 
 func getStringFromParam(i interface{}) (string, error) {

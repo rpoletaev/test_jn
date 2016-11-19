@@ -1,4 +1,4 @@
-package test_jn
+package jnserver
 
 import (
 	"fmt"

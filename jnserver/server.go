@@ -1,4 +1,4 @@
-package test_jn
+package jnserver
 
 import (
 	"fmt"
@@ -18,9 +18,8 @@ const (
 )
 
 type ServerConfig struct {
-	Port        int    `yaml:"port"`
-	Requirepass bool   `yaml:"requirepass"`
-	Password    string `yaml:"password"`
+	Port     int    `yaml:"port"`
+	Password string `yaml:"password"`
 }
 
 type command struct {
@@ -40,8 +39,6 @@ type server struct {
 func CreateServer() *server {
 	defaultCfg := &ServerConfig{
 		Port: 2020,
-		// Requirepass: true,
-		// Password:    "roma",
 	}
 
 	return CreateServerWithConfig(defaultCfg)
@@ -89,7 +86,7 @@ func (server *server) Run() error {
 			}()
 
 			cli := &client{
-				authorized: !server.Requirepass,
+				authorized: server.Password == "",
 				base:       server.bases[0],
 				srv:        server,
 				con:        nc,
@@ -97,7 +94,7 @@ func (server *server) Run() error {
 				writer:     respio.NewWriter(nc),
 			}
 
-			server.clients[cli] = !server.Requirepass
+			server.clients[cli] = cli.authorized
 			log.Println("client connected")
 			for {
 				cmdName, prs, err := cli.reader.ReadCommand()
@@ -143,9 +140,16 @@ func (s *server) newBase() (baseNum int) {
 
 func (s *server) loadCommands() {
 	// SERVER COMMANDS
+
 	s.commands["PASS"] = command{
 		false,
 		passCommand,
+		false,
+	}
+
+	s.commands["SELECT"] = command{
+		true,
+		selectDBCommand,
 		false,
 	}
 
@@ -156,6 +160,7 @@ func (s *server) loadCommands() {
 			for kc := range s.commands {
 				cli.writer.SendBulkString(kc)
 			}
+			cli.writer.Flush()
 		},
 		false,
 	}
@@ -185,6 +190,17 @@ func (s *server) loadCommands() {
 		true,
 	}
 
+	s.commands["EXPIRE"] = command{
+		true,
+		expireCommand,
+		true,
+	}
+
+	s.commands["TTL"] = command{
+		true,
+		getTTLCommand,
+		false,
+	}
 	//LIST COMMANDS
 	s.commands["LPUSH"] = command{
 		true,

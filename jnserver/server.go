@@ -7,7 +7,7 @@ import (
 
 	"strings"
 
-	"strconv"
+	"sync"
 
 	"github.com/rpoletaev/respio"
 	"github.com/xlab/closer"
@@ -16,6 +16,8 @@ import (
 const (
 	NotAuthorized = "User not authorized"
 )
+
+var mu sync.Mutex
 
 type ServerConfig struct {
 	Port     int    `yaml:"port"`
@@ -57,7 +59,6 @@ func CreateServerWithConfig(c *ServerConfig) *server {
 func (server *server) Run() error {
 	defer closer.Close()
 	if err := server.initBases(); err != nil {
-		// log.Fatal(err)
 		return err
 	}
 
@@ -82,7 +83,6 @@ func (server *server) Run() error {
 		go func(nc net.Conn) {
 			defer func() {
 				nc.Close()
-				log.Println("Exit from client routine")
 			}()
 
 			cli := &client{
@@ -118,9 +118,9 @@ func (server *server) Run() error {
 	}
 }
 
-func (server *server) Stop() {
+func (s *server) Stop() {
 	log.Println("stopping server")
-	for _, b := range server.bases {
+	for _, b := range s.bases {
 		b.Stop()
 	}
 }
@@ -131,6 +131,8 @@ func (s *server) initBases() error {
 }
 
 func (s *server) newBase() (baseNum int) {
+	mu.Lock()
+	defer mu.Unlock()
 	baseNum = len(s.bases)
 	newBase := &Base{Number: baseNum}
 	newBase.Run()
@@ -151,6 +153,17 @@ func (s *server) loadCommands() {
 		true,
 		selectDBCommand,
 		false,
+	}
+
+	s.commands["NEWBASE"] = command{
+		true,
+		func(cli *client, prs ...interface{}) {
+			baseNum := s.newBase()
+			cli.base = s.bases[baseNum]
+			cli.writer.SendRESPInt(int64(baseNum))
+			cli.writer.Flush()
+		},
+		true,
 	}
 
 	s.commands["CMDS"] = command{
@@ -201,193 +214,59 @@ func (s *server) loadCommands() {
 		getTTLCommand,
 		false,
 	}
+
 	//LIST COMMANDS
 	s.commands["LPUSH"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 2 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-			cli.ListLPush(key, prs[1:])
-		},
+		listLPush,
 		true,
 	}
 
 	s.commands["RPUSH"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 2 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-			cli.ListRPush(key, prs[1:])
-		},
+		listRPush,
 		true,
 	}
 
 	s.commands["LPOP"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 1 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-			cli.ListLPop(key)
-		},
+		listLPop,
 		false,
 	}
 
 	s.commands["RPOP"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 1 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-			cli.ListRPop(key)
-		},
+		listRPop,
 		false,
 	}
 
 	s.commands["LINDEX"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 2 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-
-			idx, err := strconv.Atoi(string(prs[1].([]byte)))
-			if err != nil {
-				cli.sendWrongParamType("Integer")
-				return
-			}
-			cli.ListIndex(key, idx)
-		},
+		listIndex,
 		false,
 	}
 
 	s.commands["LREM"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 2 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-
-			idx, err := strconv.Atoi(string(prs[1].([]byte)))
-			if err != nil {
-				cli.sendWrongParamType("Integer")
-				return
-			}
-
-			cli.ListRemove(key, idx)
-		},
+		listRemove,
 		true,
 	}
 
 	s.commands["LINSERT"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 3 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-
-			idx, err := strconv.Atoi(string(prs[1].([]byte)))
-			if err != nil {
-				cli.sendWrongParamType("Integer")
-				return
-			}
-
-			cli.ListSetIndex(key, idx, prs[2])
-		},
+		listInsert,
 		true,
 	}
 
 	s.commands["LINSAFT"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) < 3 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-
-			idx, err := strconv.Atoi(string(prs[1].([]byte)))
-			if err != nil {
-				cli.sendWrongParamType("Integer")
-				return
-			}
-			cli.ListInsertAfter(key, idx, prs[2])
-		},
+		listInsertAfter,
 		true,
 	}
 
 	s.commands["LLEN"] = command{
 		true,
-		func(cli *client, prs ...interface{}) {
-			if len(prs) != 1 {
-				cli.sendWrongParamCount()
-				return
-			}
-
-			key, err := getStringFromParam(prs[0])
-			if err != nil {
-				cli.sendError(err.Error())
-				return
-			}
-
-			cli.ListLength(key)
-		},
+		listLength,
 		true,
 	}
 }

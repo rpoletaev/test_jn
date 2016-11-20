@@ -193,6 +193,159 @@ func selectDBCommand(c *client, prs ...interface{}) {
 	c.sendOk()
 }
 
+func listLPush(cli *client, prs ...interface{}) {
+	if len(prs) < 2 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+	cli.ListLPush(key, prs[1:])
+}
+
+func listRPush(cli *client, prs ...interface{}) {
+	if len(prs) < 2 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+	cli.ListRPush(key, prs[1:])
+}
+
+func listLPop(cli *client, prs ...interface{}) {
+	if len(prs) < 1 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+	cli.ListLPop(key)
+}
+
+func listRPop(cli *client, prs ...interface{}) {
+	if len(prs) < 1 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+	cli.ListRPop(key)
+}
+
+func listIndex(cli *client, prs ...interface{}) {
+	if len(prs) < 2 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+
+	idx, err := strconv.Atoi(string(prs[1].([]byte)))
+	if err != nil {
+		cli.sendWrongParamType("Integer")
+		return
+	}
+	cli.ListIndex(key, idx)
+}
+
+func listRemove(cli *client, prs ...interface{}) {
+	if len(prs) < 2 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+
+	idx, err := strconv.Atoi(string(prs[1].([]byte)))
+	if err != nil {
+		cli.sendWrongParamType("Integer")
+		return
+	}
+
+	cli.ListRemove(key, idx)
+}
+
+func listInsert(cli *client, prs ...interface{}) {
+	if len(prs) < 3 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+
+	idx, err := strconv.Atoi(string(prs[1].([]byte)))
+	if err != nil {
+		cli.sendWrongParamType("Integer")
+		return
+	}
+
+	cli.ListSetIndex(key, idx, prs[2])
+}
+
+func listInsertAfter(cli *client, prs ...interface{}) {
+	if len(prs) < 3 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+
+	idx, err := strconv.Atoi(string(prs[1].([]byte)))
+	if err != nil {
+		cli.sendWrongParamType("Integer")
+		return
+	}
+	cli.ListInsertAfter(key, idx, prs[2])
+}
+
+func listLength(cli *client, prs ...interface{}) {
+	if len(prs) != 1 {
+		cli.sendWrongParamCount()
+		return
+	}
+
+	key, err := getStringFromParam(prs[0])
+	if err != nil {
+		cli.sendError(err.Error())
+		return
+	}
+
+	cli.ListLength(key)
+}
+
 func getStringFromParam(i interface{}) (string, error) {
 	switch v := i.(type) {
 	case []byte:

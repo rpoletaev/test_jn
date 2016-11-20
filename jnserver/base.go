@@ -213,3 +213,7 @@ func (base *Base) Remove(key string) {
 	delete(base.items, key)
 	base.Unlock()
 }
+
+func (base *Base) writeToAof(cmdName string, prs ...interface{}) {
+
+}

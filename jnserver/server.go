@@ -104,13 +104,15 @@ func (server *server) Run() error {
 				}
 				cmd, exist := server.commands[strings.ToUpper(cmdName)]
 				if !exist {
-					println("unknown command")
 					cli.sendUnknownCommand(cmdName)
 				} else {
 					if authenticated, ok := server.clients[cli]; ok && !authenticated && cmd.authRequired {
 						cli.sendNotAuthenticated()
 					} else {
 						cmd.execute(cli, prs...)
+						if cmd.writeToAof {
+							cli.base.writeToAof(cmdName, prs...)
+						}
 					}
 				}
 			}

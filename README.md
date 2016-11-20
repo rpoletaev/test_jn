@@ -1,5 +1,6 @@
 # test_jn
 redis like cache
+to read write RESP data using https://github.com/rpoletaev/respio
 
 supporting commands:
 
@@ -26,3 +27,15 @@ supporting commands:
 
 ### instalation
 ```go get github.com/rpoletaev/test_jn```
+
+### run
+```test_jn```
+
+### Client
+https://github.com/rpoletaev/reimpl
+
+### instalation
+```go get github.com/rpoletaev/reimpl```
+
+### run
+reimpl

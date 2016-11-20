@@ -38,4 +38,4 @@ https://github.com/rpoletaev/reimpl
 ```go get github.com/rpoletaev/reimpl```
 
 ### run
-reimpl
+```reimpl```

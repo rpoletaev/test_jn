@@ -11,7 +11,7 @@ func passCommand(c *client, prs ...interface{}) {
 		return
 	}
 
-	if c.srv.Password != string(prs[0].([]byte)) {
+	if c.srv.config.Password != string(prs[0].([]byte)) {
 		c.sendWrongPassword()
 		return
 	}

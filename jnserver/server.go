@@ -19,6 +19,7 @@ const (
 
 var mu sync.Mutex
 
+// ServerConfig config
 type ServerConfig struct {
 	Port     int    `yaml:"port"`
 	Password string `yaml:"password"`
@@ -31,53 +32,43 @@ type command struct {
 }
 
 type server struct {
-	*ServerConfig
+	config   ServerConfig
 	clients  map[*client]bool
 	bases    []*Base
 	commands map[string]command
 }
 
-//CreateServer Creates server with default config
-func CreateServer() *server {
-	defaultCfg := &ServerConfig{
-		Port: 2020,
-	}
-
-	return CreateServerWithConfig(defaultCfg)
-}
-
-//CreateServerWithConfig Creates server with user config
-func CreateServerWithConfig(c *ServerConfig) *server {
+//CreateServer Creates server with user config
+func CreateServer(c ServerConfig) *server {
 	return &server{
-		c,
-		make(map[*client]bool),
-		nil,
-		make(map[string]command),
+		config:   c,
+		clients:  make(map[*client]bool),
+		bases:    nil,
+		commands: make(map[string]command),
 	}
 }
 
-func (server *server) Run() error {
+func (s *server) Run() error {
 	defer closer.Close()
-	if err := server.initBases(); err != nil {
+	if err := s.initBases(); err != nil {
 		return err
 	}
 
-	server.loadCommands()
+	s.loadCommands()
 
-	l, err := net.Listen("tcp", fmt.Sprint(":", server.Port))
+	l, err := net.Listen("tcp", fmt.Sprint(":", s.config.Port))
 	if err != nil {
 		log.Fatal(err)
-		return err
 	}
+
 	defer l.Close()
 
-	log.Println("Listen on ", server.Port, "...")
+	log.Println("Listen on ", s.config.Port, "...")
 
 	for {
 		con, err := l.Accept()
 		if err != nil {
-			// log.Fatal(err)
-			return err
+			log.Printf("%v", err)
 		}
 
 		go func(nc net.Conn) {
@@ -86,46 +77,53 @@ func (server *server) Run() error {
 			}()
 
 			cli := &client{
-				authorized: server.Password == "",
-				base:       server.bases[0],
-				srv:        server,
+				authorized: s.config.Password == "",
+				base:       s.bases[0],
+				srv:        s,
 				con:        nc,
 				reader:     respio.NewReader(nc),
 				writer:     respio.NewWriter(nc),
 			}
 
-			server.clients[cli] = cli.authorized
 			log.Println("client connected")
 			for {
 				cmdName, prs, err := cli.reader.ReadCommand()
 				if err != nil {
 					cli.writer.SendError(err.Error())
-					return
+					continue
 				}
-				cmd, exist := server.commands[strings.ToUpper(cmdName)]
+
+				cmd, exist := s.commands[strings.ToUpper(cmdName)]
 				if !exist {
 					cli.sendUnknownCommand(cmdName)
-				} else {
-					if authenticated, ok := server.clients[cli]; ok && !authenticated && cmd.authRequired {
-						cli.sendNotAuthenticated()
-					} else {
-						cmd.execute(cli, prs...)
-						if cmd.writeToAof {
-							cli.base.writeToAof(cmdName, prs...)
-						}
-					}
+					continue
 				}
+
+				if cmd.authRequired && !cli.authorized {
+					cli.sendNotAuthenticated()
+					continue
+				}
+
+				cmd.execute(cli, prs...)
+
+				go func() {
+					if cmd.writeToAof {
+						cli.base.writeToAof(cmdName, prs...)
+					}
+				}()
 			}
 		}(con)
 	}
 }
 
+// Stop stop server
 func (s *server) Stop() {
 	log.Println("stopping server")
 	for _, b := range s.bases {
 		b.Stop()
 	}
 }
+
 func (s *server) initBases() error {
 	s.bases = make([]*Base, 0)
 	s.newBase()
@@ -143,8 +141,15 @@ func (s *server) newBase() (baseNum int) {
 }
 
 func (s *server) loadCommands() {
-	// SERVER COMMANDS
 
+	s.loadServerCommands()
+
+	s.loadStringCommands()
+
+	s.loadListCommands()
+}
+
+func (s *server) loadServerCommands() {
 	s.commands["PASS"] = command{
 		false,
 		passCommand,
@@ -179,8 +184,9 @@ func (s *server) loadCommands() {
 		},
 		false,
 	}
+}
 
-	// STRING COMMANDS
+func (s *server) loadStringCommands() {
 	s.commands["GET"] = command{
 		true,
 		getCommand,
@@ -216,8 +222,9 @@ func (s *server) loadCommands() {
 		getTTLCommand,
 		false,
 	}
+}
 
-	//LIST COMMANDS
+func (s *server) loadListCommands() {
 	s.commands["LPUSH"] = command{
 		true,
 		listLPush,
